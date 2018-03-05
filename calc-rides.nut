@@ -4,8 +4,8 @@
 #define PREFER_ONTIME //Do we prefer ontime or minimize empty walks ?
 
 auto data_fn;
-data_fn = "a_example.in";
-//data_fn = "b_should_be_easy.in";
+//data_fn = "a_example.in";
+data_fn = "b_should_be_easy.in";
 //data_fn  = "c_no_hurry.in";
 //data_fn  = "d_metropolis.in";
 //data_fn  = "e_high_bonus.in";
@@ -135,6 +135,16 @@ select assigned_car, count(*) total_rides,
 	sum(delay_steps) total_delay_steps	
 from booked_rides_extended_list_view
 group by assigned_car;
+
+--calculate the score of the assigned rides
+create view if not exists calculate_score_view as
+select (select sum(ride_size) total_size
+	from booked_rides_extended_list_view
+	where assigned_car > 0)
+	+ ((select count(*) count
+		from booked_rides_extended_list_view
+		where assigned_car > 0 and ride_start=assigned_at_step)
+	* (select bonus from work_limits)) score;
 
 create view if not exists car_rides_result_list_view as
 select
