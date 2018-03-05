@@ -10,7 +10,7 @@
 -- if no car can arrive at least on the ("the latest finish" - the_ride_size)
 -- we ignore it.
 --
--- It outputs in the format reuired by the hashcode 2018 rules.
+-- It outputs in the format required by the hashcode 2018 rules.
 --
 -- This solution uses triggers on dummy views to emulate stored procedures,
 -- and only requires a recent sqlite3 executable and data files to work on.

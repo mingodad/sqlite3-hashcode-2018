@@ -12,7 +12,7 @@ previous ride closest to the start of the current assigning ride
 if no car can arrive at least on the ("the latest finish" - the_ride_size)
 we ignore it.
 
-It outputs in the format reuired by the hashcode 2018 rules.
+It outputs in the format required by the hashcode 2018 rules.
 
 This solution uses triggers on dummy views to emulate stored procedures,
 and only requires a recent sqlite3 executable and data files to work on.
@@ -31,7 +31,8 @@ or directing the output to a file:
 `sqlite3 < hashcode2018.sql > result.txt`
 
 With a disk database:
-sqlite3 database_name.db < hashcode2018.sql
+
+`sqlite3 database_name.db < hashcode2018.sql`
 
 To process a specific data file look bellow after the 
 creation of the table "booked_rides_tmp" for a line like:
