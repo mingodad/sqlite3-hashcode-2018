@@ -50,16 +50,16 @@ the time above includes a prototype using a scripting language
 SquiLu (https://github.com/mingodad/squilu) around 38 hours
 including a simple plot program to show the rides for a car step by step.
 
-The scores:
+The scores (on Atom @1.66GHZ):
 
-a_example.in		8
+a_example.in		8	0m0.202s
 
-b_should_be_easy.in	176,877
+b_should_be_easy.in	176,877	0m0.301s
 
-c_no_hurry.in		12,139,456
+c_no_hurry.in		12,139,456	0m6.177s
 
-d_metropolis.in	10,995,920
+d_metropolis.in	10,995,920	0m17.973s
 
-e_high_bonus.in	21,465,945
+e_high_bonus.in	21,465,945	0m23.155s
 
 Total			44,778,206
