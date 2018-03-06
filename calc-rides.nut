@@ -55,6 +55,14 @@ create table if not exists cars(
 	,ride_id integer
 );
 
+--store the assigned rides to cars to preserve assignment order
+create table if not exists car_rides(
+	id integer primary key,
+	car_id integer not null,
+	ride_id integer not null,
+	unique(car_id, ride_id)
+);
+
 create table if not exists booked_rides(
 	id integer primary key
 	,x1 integer
@@ -148,9 +156,12 @@ select (select sum(ride_size) total_size
 
 create view if not exists car_rides_result_list_view as
 select
-	(select count(*) || ' ' || group_concat(id, ' ') 
-		from (select id-1 id -- the result want a zero based id
-		from booked_rides where assigned_car=a.id) tbl) rides
+	(select count(*) || ' ' || group_concat(the_ride_id, ' ')
+		from (select ride_id-1 the_ride_id -- the result want a zero based id
+			from car_rides where car_id=a.id
+			order by id
+		) tbl
+	) result_rides
 from cars a
 order by id;
 
@@ -187,6 +198,7 @@ auto stmt_assign_ride = db.prepare([==[
 	where id=?
 	]==]);
 auto stmt_car_update = db.prepare("update cars set ride_id=?, x2=?, y2=?, ride_end=? where id=?");
+auto stmt_car_ride = db.prepare("insert into car_rides(car_id, ride_id) values(?,?)");
 
 #ifdef FILL_DB
 auto stmt_work_limits = db.prepare("insert into work_limits(rows, cols, cars, nrides, bonus, max_steps) values(?,?,?,?,?,?)");
@@ -266,6 +278,7 @@ while(stmt_booked_rides_list.next_row())
 				new_car_end += ride.ride_size;
 				
 				//print(ride.id, new_car_end, assigned_at, ride.ride_size);
+				stmt_car_ride.bind_exec(car.id, ride.id);
 				stmt_assign_ride.bind_exec(car.id, assigned_at_step, waiting_steps, car.distance, ride.id);
 				auto rc = stmt_car_update.bind_exec(ride.id, ride.x2, ride.y2, new_car_end,car.id);
 				//print(ride.id, ride.x2, ride.y2, new_car_end,car.id, db.errmsg(), rc);
@@ -283,6 +296,8 @@ while(stmt_booked_rides_list.next_row())
 }
 db.exec_dml("commit");
 
+auto result_score = db.exec_get_one("select score from calculate_score_view");
+print("Result score:", result_score);
 print("The result of rides by car follow:");
 auto stmt_result = db.prepare("select * from car_rides_result_list_view");
 auto count = 0;

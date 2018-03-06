@@ -10,7 +10,8 @@
 -- if no car can arrive at least on the ("the latest finish" - the_ride_size)
 -- we ignore it.
 --
--- It outputs in the format required by the hashcode 2018 rules.
+-- It outputs in the format required by the hashcode 2018 rules,
+-- to a file named 'results.txt'.
 --
 -- This solution uses triggers on dummy views to emulate stored procedures,
 -- and only requires a recent sqlite3 executable and data files to work on.
@@ -120,17 +121,21 @@ create table if not exists cars(
 	,ride_id integer
 );
 
---we hope there is more booked_rides than cars
---for this hack to produce the desired result:
---	a table with one row for each available car
-insert into cars(id)
-	select id
-	from booked_rides
-	order by id
-	limit (select cars from work_limits);
+--add one record for each car to be used as scratch for ride assignement
+WITH RECURSIVE
+  cnt(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM cnt WHERE x<(select cars from work_limits))
+insert into cars(id) SELECT x FROM cnt;
 
 --show/test what we've got with our hack
 select ('Cars table has ' || count(*) || ' cars') cars_count from cars;
+
+--store the assigned rides to cars to preserve assignment order
+create table if not exists car_rides(
+	id integer primary key,
+	car_id integer not null,
+	ride_id integer not null,
+	unique(car_id, ride_id)
+);
 
 --some views to help on several tasks
 --using nested selects to not repeat literal calculations
@@ -210,14 +215,17 @@ select (select sum(ride_size) total_size
 		where assigned_car > 0 and ride_start=assigned_at_step)
 	* (select bonus from work_limits)) score;
 
---each row: number_of_rides followed by a list of assigned rides, all separated by on space
+--on each row: number_of_rides followed by a list of assigned rides, all separated by on space
 --implicitly each row represents a car
 -- car and rides are zero based (as required by the rules)
 create view if not exists car_rides_result_list_view as
 select
-	(select count(*) || ' ' || group_concat(id, ' ') 
-		from (select id-1 id -- the result want a zero based id
-		from booked_rides where assigned_car=a.id) tbl) result_rides
+	(select count(*) || ' ' || group_concat(the_ride_id, ' ')
+		from (select ride_id-1 the_ride_id -- the result want a zero based id
+			from car_rides where car_id=a.id
+			order by id
+		) tbl
+	) result_rides
 from cars a
 order by id;
 
@@ -321,6 +329,8 @@ begin
 		ride_id=new.target_ride_id, x2=new.target_x2, y2=new.target_y2,
 		ride_end=(select new_car_end from ride_assign_tmp_calculations where id=1)
 	where id=old.id;
+
+	insert into car_rides(car_id, ride_id) values(old.id, new.target_ride_id);
 end;
 
 
@@ -385,4 +395,6 @@ select 'Result Status' '----'; select * from booked_rides_result_view;select '' 
 select * from calculate_score_view;
 
 --output the results
+.h off
+.output 'results.txt'
 select * from car_rides_result_list_view;
