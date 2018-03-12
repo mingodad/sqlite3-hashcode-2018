@@ -52,7 +52,10 @@ The scores (on Atom @1.66GHZ):
 |--------------|----------:|-----------------:|
 |a_example.in |		8 |	0m0.202s|
 |b_should_be_easy.in	| 176,877	| 0m0.301s|
-|c_no_hurry.in | 12,139,456 | 0m6.177s|
-|d_metropolis.in | 10,995,920 | 0m17.973s|
+|c_no_hurry.in | 13,089,884 | 0m6.177s|
+|d_metropolis.in | 10,990,382 | 0m17.973s|
 |e_high_bonus.in | 21,465,945 | 0m23.155s|
-|Total | 44,778,206 | |
+|Total | 45,723,096 | |
+
+New: The calc-rides.nut have an option to try reduce the number of required cars, with b_should_be_easy.in it can achieve the same score with only 24 cars, with e_high_bonus.in it achieve the same score with 174 cars, the others could not work with less cars.
+

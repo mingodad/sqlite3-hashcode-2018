@@ -2,10 +2,11 @@
 
 #define FILL_DB  //if we want to start from scratch
 #define PREFER_ONTIME //Do we prefer ontime or minimize empty walks ?
+#define TRY_MINIMIZE_CARS
 
 auto data_fn;
-//data_fn = "a_example.in";
-data_fn = "b_should_be_easy.in";
+data_fn = "a_example.in";
+//data_fn = "b_should_be_easy.in";
 //data_fn  = "c_no_hurry.in";
 //data_fn  = "d_metropolis.in";
 //data_fn  = "e_high_bonus.in";
@@ -71,7 +72,7 @@ create table if not exists booked_rides(
 	,y2 integer
 	,ride_start integer
 	,ride_end integer
-	,assigned_car boolean default 0
+	,assigned_car integer default 0
 	,assigned_at_step integer
 	,waiting_steps integer -- if positive the car need wait, negative the passenger need wait
 	,distance_to_start integer -- car distance between last position to the start of the assigned ride
@@ -101,7 +102,14 @@ from (
 		a.waiting_steps,
 		(x1 + y1) start_distance
 	FROM booked_rides AS a
-	Order by ride_start, ride_size, start_distance
+	Order by ride_start, ride_size desc, start_distance
+	--Order by (ride_start+ride_size)
+	--Order by ride_start, start_distance, ride_size --9566992
+	--Order by ride_size desc --13092460
+	--Order by ride_size desc, start_distance --13089884
+	--Order by ride_end desc --12482553
+	--Order by (ride_end-ride_size), start_distance --better for a_example, c_no_hurry
+	--order by sqrt(power(x1, 2) + power(y1, 2) + power(ride_start, 2))
 ) tbl;
 
 create view if not exists booked_rides_extended_list_view as
@@ -177,7 +185,9 @@ auto stmt_booked_rides_list = db.prepare([==[
 //with this we get more ontime rides but we have more steps going from on ride to another
 auto stmt_cars_available_list = db.prepare([==[
 	select id, ride_end, (abs(@ride_x1-x2) + abs(@ride_y1-y2)) distance
-	from cars where ride_end <= @ride_end_less_ride_size
+	from cars
+	where ride_end <= @ride_end_less_ride_size
+		--and distance < @ride_size
 	order by (ride_end + distance)
 	limit 1
 	]==]);
@@ -185,7 +195,9 @@ auto stmt_cars_available_list = db.prepare([==[
 //with this we get less ontime rides but also less steps going from one ride to another
 auto stmt_cars_available_list = db.prepare([==[
 	select id, ride_end, (abs(@ride_x1-x2) + abs(@ride_y1-y2)) distance
-	from cars where ride_end <= @ride_end_less_ride_size
+	from cars
+	where ride_end <= @ride_end_less_ride_size
+		--and distance < @ride_size
 	order by distance
 	limit 1
 	]==]);
@@ -244,45 +256,65 @@ auto total_cars0 = total_cars;
 #endif
 
 db.exec_dml("begin");
-while(stmt_booked_rides_list.next_row())
+#ifdef TRY_MINIMIZE_CARS
+auto best_found = false;
+auto last_score = 0;
+auto max_score = 0;
+auto max_score_degradation_factor = 0.98;
+auto last_override_total_cars = 0;
+
+while(true)
 {
-	auto isAssigned = stmt_booked_rides_list.col(1);
-	if(!isAssigned)
+	printf("Trying with car count= %d\t", (override_total_cars ? override_total_cars :  total_cars));
+#endif
+	while(stmt_booked_rides_list.next_row())
 	{
-		auto ride = stmt_booked_rides_list.asTable();
-
-		auto max_ride_start = ride.ride_end - ride.ride_size;
-		//foreach(the_ride_start in [ride.ride_start, max_ride_start]) //try ontime first if fail then try ride_end-ride_size
-		foreach(the_ride_start in [max_ride_start]) //try only ride_end-ride_size
+		auto isAssigned = stmt_booked_rides_list.col(1);
+		if(!isAssigned)
 		{
-			//auto done = false;
-			//find the closest car avaliable that can execute the ride without delay past the ride_end
-			stmt_cars_available_list.bind_values(ride.x1, ride.y1, the_ride_start);
-			//print(ride_id, ride_x1, ride_y1, the_ride_start, ride.start_distance);
-			if(stmt_cars_available_list.next_row())
+			auto ride = stmt_booked_rides_list.asTable();
+
+			auto max_ride_start = ride.ride_end - ride.ride_size;
+			//foreach(the_ride_start in [ride.ride_start, max_ride_start]) //try ontime first if fail then try ride_end-ride_size
+			foreach(the_ride_start in [max_ride_start]) //try only ride_end-ride_size
 			{
-				//print("Got one");
-				auto car = stmt_cars_available_list.asTable();
-				//print(ride.id, car.id, car.ride_end, car.distance, ride.ride_start, the_ride_start, ride.start_distance);
-				
-				auto new_car_end = car.ride_end + car.distance;
-				auto waiting_steps =  ride.ride_start - new_car_end;
+				//auto done = false;
+				//find the closest car avaliable that can execute the ride without delay past the ride_end
+				//stmt_cars_available_list.bind_values(ride.x1, ride.y1, the_ride_start, ride.ride_size);
+				stmt_cars_available_list.bind_values(ride.x1, ride.y1, the_ride_start);
+				//print(ride_id, ride_x1, ride_y1, the_ride_start, ride.start_distance);
+				if(stmt_cars_available_list.next_row())
+				{
+					//print("Got one");
+					auto car = stmt_cars_available_list.asTable();
+					//print(ride.id, car.id, car.ride_end, car.distance, ride.ride_start, the_ride_start, ride.start_distance);
+					
+					auto new_car_end = car.ride_end + car.distance;
+					auto waiting_steps =  ride.ride_start - new_car_end;
 
-				//Do we need to wait to start the new ride ?
-				if(waiting_steps > 0) new_car_end += waiting_steps;
-				
-				//we use the new_car_end calculated till now without the ride_size
-				auto assigned_at_step = new_car_end;
+					//Do we need to wait to start the new ride ?
+					if(waiting_steps > 0) new_car_end += waiting_steps;
+					
+					//we use the new_car_end calculated till now without the ride_size
+					auto assigned_at_step = new_car_end;
 
-				//set new_car_end to the expected value after complete the ride
-				new_car_end += ride.ride_size;
-				
-				//print(ride.id, new_car_end, assigned_at, ride.ride_size);
-				stmt_car_ride.bind_exec(car.id, ride.id);
-				stmt_assign_ride.bind_exec(car.id, assigned_at_step, waiting_steps, car.distance, ride.id);
-				auto rc = stmt_car_update.bind_exec(ride.id, ride.x2, ride.y2, new_car_end,car.id);
-				//print(ride.id, ride.x2, ride.y2, new_car_end,car.id, db.errmsg(), rc);
-				//done = true;
+					//set new_car_end to the expected value after complete the ride
+					new_car_end += ride.ride_size;
+					
+					//print(ride.id, new_car_end, assigned_at, ride.ride_size);
+					stmt_car_ride.bind_exec(car.id, ride.id);
+					stmt_assign_ride.bind_exec(car.id, assigned_at_step, waiting_steps, car.distance, ride.id);
+					auto rc = stmt_car_update.bind_exec(ride.id, ride.x2, ride.y2, new_car_end,car.id);
+					//print(ride.id, ride.x2, ride.y2, new_car_end,car.id, db.errmsg(), rc);
+					//done = true;
+				}
+				stmt_cars_available_list.reset();
+				/*
+				if(done)
+				{
+					//print("Done");
+					break;
+				}*/
 			}
 			stmt_cars_available_list.reset();
 			/*
@@ -293,11 +325,57 @@ while(stmt_booked_rides_list.next_row())
 			}*/
 		}
 	}
+#ifdef TRY_MINIMIZE_CARS
+	if(best_found)
+	{
+		print(last_score);
+		break;
+	}
+	
+	auto current_score = db.exec_get_one("select score from calculate_score_view");
+	print(current_score);
+
+	//reset to start again
+	db.exec_dml("delete from car_rides");
+	db.exec_dml("delete from cars");
+	db.exec_dml("update booked_rides set assigned_car=0");
+	
+	if(last_score == 0)
+	{
+		override_total_cars = db.exec_get_one("select cars from work_limits where id=1") / 2;
+	}
+	else if((max_score * max_score_degradation_factor) > current_score)
+	{
+		best_found = true;
+		override_total_cars *= 2;
+		if((total_cars-override_total_cars) == 1) ++override_total_cars;
+	}
+	else
+	{
+		override_total_cars /= 2;
+	}
+	
+	if(max_score < current_score) max_score = current_score;
+	if(!best_found) last_score = current_score;
+	last_override_total_cars = override_total_cars;
+	for(auto c=1; c <= override_total_cars; ++c) stmt_cars.bind_exec(c);
+	//print("Looping with", override_total_cars, current_score);
 }
+#endif
 db.exec_dml("commit");
 
+auto stmt_stats = db.prepare("select * from booked_rides_result_view");
+print(stmt_stats.colsNameAsArray().join(" | "));
+while(stmt_stats.next_row())
+{
+	auto srec = stmt_stats.asArray();
+	foreach(idx, elm in srec) if(type(elm) == "userdata") srec[idx] = "";
+	print(srec.join(" | "));
+}
+print("===");
+
 auto result_score = db.exec_get_one("select score from calculate_score_view");
-print("Result score:", result_score);
+print("Result score:", result_score, "with " + (override_total_cars ? override_total_cars :  total_cars) + " cars");
 print("The result of rides by car follow:");
 auto stmt_result = db.prepare("select * from car_rides_result_list_view");
 auto count = 0;

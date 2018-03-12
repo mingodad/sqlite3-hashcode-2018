@@ -99,7 +99,7 @@ create table if not exists booked_rides(
 	,y2 integer
 	,ride_start integer
 	,ride_end integer
-	,assigned_car boolean default 0
+	,assigned_car integer default 0
 	,assigned_at_step integer
 	,waiting_steps integer -- if positive the car need wait, negative the passenger need wait
 	,distance_to_start integer -- car distance between last position to the start of the assigned ride
@@ -162,7 +162,7 @@ from (
 		a.waiting_steps,
 		(x1 + y1) start_distance
 	FROM booked_rides AS a
-	Order by ride_start, ride_size, start_distance
+	Order by ride_start, ride_size desc, start_distance
 ) tbl;
 
 create view if not exists booked_rides_extended_list_view as
