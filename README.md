@@ -59,3 +59,5 @@ The scores (on Atom @1.66GHZ):
 
 New: The calc-rides.nut have an option to try reduce the number of required cars, with b_should_be_easy.in it can achieve the same score with only 24 cars, with e_high_bonus.in it achieve the same score with 174 cars, the others could not work with less cars.
 
+Added a C++ port of the java solution from https://github.com/GameXtra/Google-Hash-Code-2018, it achieves a score above 49,000,000
+
