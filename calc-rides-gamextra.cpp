@@ -68,7 +68,7 @@ struct Random {
 };
 #endif // 0
 
-void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
+void Solve(const string_t &filename, int_t nloops=1)
 {
     int_t no_rows, no_cols, no_vehicles, no_rides, bonus, no_steps;
     std::cout << filename << "\t";
@@ -82,14 +82,11 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
 
     //std::cout << "Header\t" << no_rows << "\t" << no_cols << "\t" << no_vehicles << "\n";
 
-    //LinkedList<Ride> ridesB = new LinkedList<>();
-    //std::list<Ride> ridesB;
     std::vector<Ride> ridesB;
 
     Ride r_tmp;
     for (int_t i = 0; i < no_rides; i++)
     {
-
         fd_in >> r_tmp.startPoint.row;
         fd_in >> r_tmp.startPoint.col;
 
@@ -102,7 +99,6 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
         r_tmp.index = i;
         ridesB.push_back(r_tmp);
     }
-    double_t factor = 1.0;
     int_t bestScore = 0;
 
     //std::cout << "Rides size\t" << no_rides << "\t" << ridesB.size() << "\n";
@@ -116,24 +112,16 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
         return result < 0;
     };
 
+    //because we are using brute force we don't benefit too much by sort on total score
     std::sort(ridesB.begin(), ridesB.end(), rides_cmp);
 
-    //ArrayList<ArrayList<Integer>> bestPlan = new ArrayList<>();
     const std::vector<std::vector<int_t>> *bestPlan;
     Random r;
 
     //int_t loop_count = 0;
     for(int_t il=0; il < nloops; ++il)
     {
-        if(nloops > 1)
-        {
-            factor = r.nextDouble() * 0.0001;
-            if (r.nextBoolean()) factor *= -1;
-        }
-        else factor = dfactor; //r.nextDouble() * 0.00005; //;
-        //LinkedList<Ride> rides = (LinkedList<Ride>) ridesB.clone();
-        //std::list<Ride> rides(ridesB);
-
+	//vector or list ? for small sizes vector can be faster
         //typedef std::list<int> Irides_t;
         typedef std::vector<int> Irides_t;
         Irides_t irides(ridesB.size());
@@ -145,6 +133,8 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
             //Collections.shuffle(rides);
             std::random_device rd;
             std::mt19937 grd(rd());
+
+	    //shuffle can randomly give a benefit if we have duplcates
             std::shuffle(irides.begin(), irides.end(), grd);
 
             auto irides_cmp = [&ridesB, rides_cmp](const auto &left, const auto &right)
@@ -154,21 +144,15 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
             std::sort(irides.begin(), irides.end(), irides_cmp);
         }
 
-        //std::cout << "factor\t" /*<< std::setw( 15 ) << std::setprecision( 12 ) << std::setfill( '0' ) */
-	//	<< factor << "\t" << ++loop_count << "\n";
-
         int_t score = 0;
 
-        //ArrayList<ArrayList<Integer>> plan = new ArrayList<>();
         std::vector<std::vector<int_t>> plan(no_vehicles);
 
-        //PriorityQueue<Vehicle> q = new PriorityQueue<>();
         auto cmp = [](const Vehicle &left, const Vehicle &right)
         {
             return left.endTime  > right.endTime;
         };
         std::priority_queue<Vehicle, std::vector<Vehicle>, decltype(cmp)> q(cmp);
-        //std::list<Vehicle> q;
         Vehicle v_tmp;
         v_tmp.endTime = 0;
         v_tmp.endPoint.row = 0;
@@ -177,20 +161,14 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
         {
             v_tmp.index = i;
             q.push(v_tmp);
-            //q.push_back(v_tmp);
         }
-        bool_t isBonus = false;
         //int_t last_ride = 0;
         while (!q.empty() && !irides.empty())
         {
-            //Vehicle v = q.poll();
             const Vehicle &v = q.top();
-            //Vehicle v = q.back();
-            //q.pop_back();
             //if(last_ride != q.size())
             //{std::cout << "while\t" << score << "\t" << q.size() << "\t" << rides.size() << "\n"; last_ride = q.size();}
 
-            int_t endTime = 0;
             int_t bestStartTime = std::numeric_limits<int_t>::max();
             auto bestRide = irides.end();
             auto ride_it_curr = irides.begin();
@@ -198,39 +176,30 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
             for(; ride_it_curr !=  ride_it_end; ++ride_it_curr)
             {
                 const Ride &the_ride = ridesB[*ride_it_curr];
-                //if(ride == null) continue;
-                //if (r.nextDouble() < 0.0001) continue;
 
-                if (the_ride.startStep > bestStartTime) break;
+                //if (the_ride.startStep > bestStartTime) break;
                 if (v.endTime >= the_ride.endStep) continue;
-                int_t step = std::max(v.endTime + v.endPoint.distance(the_ride.startPoint), the_ride.startStep);
-                int_t ride_distance = the_ride.distance();
-                if (step + ride_distance > the_ride.endStep) continue;
+                int_t the_startTime = std::max(v.endTime + v.endPoint.distance(the_ride.startPoint), the_ride.startStep);
+                if (the_startTime + the_ride.distance() > the_ride.endStep) continue;
 
-                bool_t isBonus1 = step == the_ride.startStep;
-                int_t originst = step;
-                step -= isBonus1 ? bonus : 0;
-                step += ride_distance * factor;
-                if (step > bestStartTime) continue;
-                isBonus = isBonus1;
-                bestStartTime = step;
+		//reducing bonus increase d_metropolis but drops e_high_bonus
+                if (the_startTime /*- ((the_startTime == the_ride.startStep) ? bonus : 0)*/ > bestStartTime) continue;
+                bestStartTime = the_startTime;
                 bestRide = ride_it_curr;
-                endTime = originst + ride_distance;
             }
             //std::cout << "bestride ? \t" << (bestRide != rides.end()) << "\t" << v.index << "\n";
             if (bestRide != irides.end())
             {
                 const Ride &the_ride = ridesB[*bestRide];
-                Vehicle uv = v;
-                q.pop();
+                Vehicle uv = v; q.pop(); //copy and remove
                 plan[uv.index].push_back(the_ride.index);
                 uv.endPoint = the_ride.endPoint;
-                uv.endTime = endTime;
-                score += (isBonus ? bonus : 0) + the_ride.distance();
-                irides.erase(bestRide);
-                bestRide = ride_it_end;
-                q.push(uv);
-                //q.push_front(v);
+                int_t ride_distance = the_ride.distance();
+                uv.endTime = bestStartTime + ride_distance;
+                score += ((bestStartTime == the_ride.startStep) ? bonus : 0) + ride_distance;
+                irides.erase(bestRide); //remove from next searchs
+                bestRide = ride_it_end; //reset
+                q.push(uv); //reinsert and reorder
             }
             else q.pop();
         }
@@ -247,7 +216,6 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
                     { \
                         rout << " "; \
                         rout << bestPlan->at(i)[j]; \
-                        rout  << "\t" << std::fixed << std::setprecision(8) << factor; \
                     } \
                     rout << "\n"; \
                 }
@@ -255,7 +223,7 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
             try
             {
                 std::ostringstream ofn;
-                ofn << filename << "-" << std::fixed << std::setprecision(8) << factor << "-" << bestScore << ".txt";
+                ofn << filename << "-" << bestScore << ".txt";
                 std::ofstream out(ofn.str());
                 SHOW_RESULT(out);
                 out.close();
@@ -267,7 +235,7 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
                 return;
             }
 #undef SHOW_RESULT
-            std::cout << score << "\t" << std::fixed << std::setprecision(8) << factor << std::endl;
+            std::cout << score << std::endl;
             //return; //do not try again
         }
     }
@@ -275,17 +243,15 @@ void Solve(const string_t &filename, int_t nloops=1, double_t dfactor=0.000005)
 
 int_t main(int_t argc, char *argv[])
 {
-    double_t dfactor = 0.000005;
     int_t nloops = 1;
     std::string bfn = "";
     if(argc > 1) bfn = argv[1];
     if(argc > 2) nloops = std::atoi(argv[2]);
-    if(argc > 3) dfactor = std::atof(argv[3]);
 
-    Solve(bfn + "a_example.in", nloops, dfactor);
-    Solve(bfn + "b_should_be_easy.in", nloops, dfactor);
-    Solve(bfn + "c_no_hurry.in", nloops, dfactor);
-    Solve(bfn + "d_metropolis.in", nloops, dfactor);
-    Solve(bfn + "e_high_bonus.in", nloops, dfactor);
+    Solve(bfn + "a_example.in", nloops);
+    Solve(bfn + "b_should_be_easy.in", nloops);
+    Solve(bfn + "c_no_hurry.in", nloops);
+    Solve(bfn + "d_metropolis.in", nloops);
+    Solve(bfn + "e_high_bonus.in", nloops);
     return 0;
 }
